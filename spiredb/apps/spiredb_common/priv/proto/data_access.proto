@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package spiredb.data;
+
+// Simple data access service (per-node)
+// Provides raw range scan and point lookup operations
+service DataAccess {
+  // Range scan on a SINGLE region
+  // SpireSQL fans out to multiple regions for full table scans
+  rpc Scan(ScanRequest) returns (stream ScanResponse);
+  
+  // Point lookup
+  rpc Get(GetRequest) returns (GetResponse);
+  
+  // Batch get multiple keys (within same region)
+  rpc BatchGet(BatchGetRequest) returns (BatchGetResponse);
+}
+
+// Scan request for single region
+message ScanRequest {
+  uint32 region_id = 1;
+  bytes start_key = 2;
+  bytes end_key = 3;
+  uint32 batch_size = 4;   // Rows per Arrow batch (default: 1000)
+  uint32 limit = 5;         // Max rows from THIS region (0 = unlimited)
+  bool read_follower = 6;   // Allow reading from follower (eventually consistent)
+}
+
+// Scan response with Arrow batch
+message ScanResponse {
+  // Apache Arrow RecordBatch (binary IPC format)
+  // Schema: [key: Binary, value: Binary]
+  bytes arrow_batch = 1;
+  
+  bool has_more = 2;
+  
+  // Stats for monitoring
+  ScanStats stats = 3;
+}
+
+message ScanStats {
+  uint64 rows_returned = 1;
+  uint64 bytes_read = 2;
+  uint32 scan_time_ms = 3;
+}
+
+// Point get
+message GetRequest {
+  uint32 region_id = 1;
+  bytes key = 2;
+  bool read_follower = 3;
+}
+
+message GetResponse {
+  bytes value = 1;
+  bool found = 2;
+}
+
+// Batch get (all keys must be in same region)
+message BatchGetRequest {
+  uint32 region_id = 1;
+  repeated bytes keys = 2;
+}
+
+message BatchGetResponse {
+  // Arrow batch with schema: [key: Binary, value: Binary, found: Boolean]
+  bytes arrow_batch = 1;
+}
