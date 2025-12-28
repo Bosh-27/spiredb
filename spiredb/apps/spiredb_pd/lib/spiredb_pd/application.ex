@@ -7,6 +7,11 @@ defmodule SpiredbPd.Application do
 
   @impl true
   def start(_type, _args) do
+    # Run diagnostics if enabled
+    if System.get_env("SPIRE_DIAG") == "true" do
+      SpiredbPd.Diagnostic.run()
+    end
+
     # PD.Server is a Ra machine, managed by Ra cluster
     # It's started via Ra APIs, not supervised here
 
@@ -14,7 +19,36 @@ defmodule SpiredbPd.Application do
     # Use config :spiredb_pd, :disable_services, true to disable in tests
 
     # Explicitly start Ra default system if not already running
-    # This is required for :ra 2.x to function correctly
+    # Directory creation and config handled in runtime.exs before applications start
+
+    # Start isolated Ra system for PD
+    # Correction: Use start/1 with full config including derived names
+    base_dir = "/var/lib/spiredb/ra"
+    pd_dir = Path.join(base_dir, "pd")
+    File.mkdir_p!(pd_dir)
+    pd_dir_charlist = String.to_charlist(pd_dir)
+
+    sys_name = :pd_system
+    names = :ra_system.derive_names(sys_name)
+
+    pd_config =
+      :ra_system.default_config()
+      |> Map.merge(%{
+        name: sys_name,
+        names: names,
+        data_dir: pd_dir_charlist,
+        wal_data_dir: pd_dir_charlist,
+        wal_max_size_bytes: 64 * 1024 * 1024,
+        wal_pre_allocate: false,
+        wal_write_strategy: :default
+      })
+
+    case :ra_system.start(pd_config) do
+      {:ok, _} -> :ok
+      {:error, {:already_started, _}} -> :ok
+      error -> IO.warn("Failed to start PD Raft system: #{inspect(error)}")
+    end
+
     case :ra_system.start_default() do
       {:ok, _} ->
         :ok

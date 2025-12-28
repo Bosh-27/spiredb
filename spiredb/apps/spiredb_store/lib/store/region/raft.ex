@@ -46,7 +46,7 @@ defmodule Store.Region.Raft do
     heartbeat_interval = Application.get_env(:spiredb_store, :raft_heartbeat_interval, 150)
 
     # WAL configuration for durability
-    wal_max_size = Application.get_env(:spiredb_store, :raft_wal_max_size, 256 * 1024 * 1024)
+    wal_max_size = Application.get_env(:spiredb_store, :raft_wal_max_size, 64 * 1024 * 1024)
     snapshot_interval = Application.get_env(:spiredb_store, :raft_snapshot_interval, 4096)
 
     config = %{
@@ -58,8 +58,8 @@ defmodule Store.Region.Raft do
       log_init_args: %{},
       # WAL settings - pre-allocate for better write performance
       wal_max_size_bytes: wal_max_size,
-      wal_pre_allocate: true,
-      wal_write_strategy: :o_sync,
+      wal_pre_allocate: false,
+      wal_write_strategy: :default,
       # Segment settings for efficient log management
       segment_max_entries: 32768,
       # Snapshot more frequently to reduce recovery time

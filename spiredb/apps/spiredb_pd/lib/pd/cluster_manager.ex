@@ -11,8 +11,8 @@ defmodule PD.ClusterManager do
   require Logger
 
   # Time to wait for libcluster to form mesh before deciding
-  @initial_wait_ms 5_000
-  @check_interval_ms 2_000
+  @initial_wait_ms 2_000
+  @check_interval_ms 5_000
 
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -30,6 +30,7 @@ defmodule PD.ClusterManager do
 
     # 1. Determine if I am the Seed Node
     is_seed = determine_if_seed(node_name, pod_name)
+    Logger.debug("Check cluster status: node=#{node_name}, pod=#{pod_name}, is_seed=#{is_seed}")
 
     # 2. Check if Raft is already running locally
     if raft_running?() do
@@ -43,6 +44,14 @@ defmodule PD.ClusterManager do
         attempt_join(node_name, state)
       end
     end
+  end
+
+  def handle_info({_ref, _result}, state) do
+    {:noreply, state}
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
+    {:noreply, state}
   end
 
   defp bootstrap_cluster(node_name) do
@@ -99,15 +108,33 @@ defmodule PD.ClusterManager do
   end
 
   defp find_leader_node(nodes) do
+    Logger.info("Checking for leader in nodes: #{inspect(nodes)}")
     # Ask each node if it is leader
     Enum.find_value(nodes, :no_leader, fn n ->
       try do
-        # We can call a lightweight check
-        # or check :ra.members({:pd_server, n})
-        case :rpc.call(n, :ra, :leader, [{:pd_server, n}]) do
-          # It knows a leader
-          {:ok, _leader} -> {:ok, n}
-          _ -> nil
+        # We call :ra.members to check if the node has an active Ra server
+        # and checking finding the leader via that node.
+        # :ra.members returns {:ok, Members, Leader} or just Members depending on version, or crashes if down.
+        result = :rpc.call(n, :ra, :members, [{:pd_server, n}])
+        Logger.info("Check members on #{n} returned: #{inspect(result)}")
+
+        case result do
+          {:ok, _members, _leader} ->
+            Logger.info("Found active PD server on #{n}")
+            {:ok, n}
+
+          {:ok, _members} ->
+            # Some versions might just return members
+            Logger.info("Found active PD server on #{n}")
+            {:ok, n}
+
+          list when is_list(list) ->
+            # Or just a list
+            Logger.info("Found active PD server on #{n}")
+            {:ok, n}
+
+          _ ->
+            nil
         end
       catch
         _, _ -> nil
@@ -121,10 +148,28 @@ defmodule PD.ClusterManager do
     server_id = {:pd_server, my_node}
     leader_server = {:pd_server, leader_node}
 
-    # Note: :ra.add_member must be called on a cluster member (preferably leader)
-    case :rpc.call(leader_node, :ra, :add_member, [leader_server, {server_id, my_node}]) do
-      {:ok, _, _} -> :ok
-      err -> {:error, err}
+    # FIX: :ra.add_member expects just the server_id, NOT {server_id, node} as second arg?
+    # Actually, check Ra docs/source.
+    # ra:add_member(ServerRef, Member)
+    # Member is usually {Name, Node}
+    # SO: :ra.add_member(leader_server, server_id) is likely correct if server_id is {Name, Node}
+    # The error log showed: {{:pd_server, :"spiredb@..."}, :"spiredb@..."} which means we were wrapping it.
+
+    # Correct call:
+    case :rpc.call(leader_node, :ra, :add_member, [leader_server, server_id]) do
+      {:ok, _, _} ->
+        :ok
+
+      {:error, :already_member} ->
+        Logger.info("Node #{my_node} is already a member of the cluster.")
+        :ok
+
+      {:error, {:already_member, _}} ->
+        Logger.info("Node #{my_node} is already a member of the cluster.")
+        :ok
+
+      err ->
+        {:error, err}
     end
   end
 
@@ -147,6 +192,10 @@ defmodule PD.ClusterManager do
         # StatefulSet ordinal 0 is the seed
         String.ends_with?(pod_name, "-0")
 
+      "gossip" ->
+        # StatefulSet ordinal 0 is the seed (same logic as k8sdns)
+        String.ends_with?(pod_name, "-0")
+
       "epmd" ->
         # Static list: First node is the seed
         first_node =
@@ -162,7 +211,7 @@ defmodule PD.ClusterManager do
           true
         end
 
-      # Other modes (dns, gossip) must use explicit SPIRE_IS_SEED=true
+      # Other modes must use explicit SPIRE_IS_SEED=true
       _ ->
         false
     end

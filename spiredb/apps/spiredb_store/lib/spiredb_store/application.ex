@@ -37,10 +37,11 @@ defmodule SpiredbStore.Application do
     strategy_config =
       case discovery do
         "k8sdns" ->
+          # DNS discovery using headless service - will discover spiredb-0, spiredb-1, etc.
           [
             strategy: Cluster.Strategy.Kubernetes.DNS,
             config: [
-              service: System.get_env("SPIRE_SERVICE_NAME", "spiredb"),
+              service: System.get_env("SPIRE_SERVICE_NAME", "spiredb-headless"),
               application_name: "spiredb",
               kubernetes_namespace: System.get_env("SPIRE_NAMESPACE", "default"),
               polling_interval: 5_000

@@ -104,11 +104,10 @@ defmodule Store.Server do
   def init(_opts) do
     node_name = Node.self()
 
-    # Initialize Regions (async)
-    send(self(), :initialize_regions)
-
-    # Register with PD (async)
-    send(self(), :register_with_pd)
+    # Stagger startup: Wait 5s before initializing regions and registering
+    # This allows the local PD server (if seed) to stabilize its own isolated Raft system
+    Logger.info("Store Server started. Scheduling dependency check...")
+    Process.send_after(self(), :check_pd_dependency, 0)
 
     state = %__MODULE__{
       node_name: node_name,
@@ -118,6 +117,19 @@ defmodule Store.Server do
     }
 
     {:ok, state}
+  end
+
+  @impl true
+  def handle_info(:check_pd_dependency, state) do
+    Logger.info("Checking PD dependency...")
+    # This might block this process for a while, but init has returned so Supervisor is happy.
+    wait_for_pd_ready()
+
+    Logger.info("PD is ready. Initializing regions...")
+    Process.send_after(self(), :initialize_regions, 0)
+    Process.send_after(self(), :register_with_pd, 0)
+
+    {:noreply, state}
   end
 
   @impl true
@@ -162,10 +174,11 @@ defmodule Store.Server do
       Logger.info("Attempting to register with PD as #{node}...")
 
       case PD.register_store(node) do
-        {:ok, {_index, _result, _leader}} ->
+        {:ok, {:ok, _result}, _leader} ->
           Logger.info("Registered with PD: #{node}")
 
-        # No need to notify parent, just done
+        {:ok, result, _leader} ->
+          Logger.info("Registered with PD: #{node}, result: #{inspect(result)}")
 
         {:error, reason} ->
           Logger.warning(
@@ -422,6 +435,32 @@ defmodule Store.Server do
         Process.sleep(500)
         wait_for_ra(retries - 1)
       end
+    end
+  end
+
+  defp wait_for_pd_ready do
+    # Try to find seed node
+    seed = PD.seed_node()
+
+    # Check if PD is running on seed
+    # Remote check via RPC if seed != self, or local check
+    is_ready =
+      if seed == Node.self() do
+        PD.is_running?(seed)
+      else
+        # RPC check
+        case :rpc.call(seed, PD, :is_running?, [seed]) do
+          true -> true
+          _ -> false
+        end
+      end
+
+    if is_ready do
+      :ok
+    else
+      Logger.info("PD not ready yet on #{seed}. Waiting...")
+      Process.sleep(2000)
+      wait_for_pd_ready()
     end
   end
 

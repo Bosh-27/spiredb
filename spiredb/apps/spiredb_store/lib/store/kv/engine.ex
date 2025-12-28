@@ -89,6 +89,24 @@ defmodule Store.KV.Engine do
     path = opts[:path] || Application.get_env(:spiredb_store, :rocksdb_path, "/tmp/spiredb/data")
     File.mkdir_p!(path)
 
+    # Cleanup stale references from previous crashes/restarts
+    # This fixes "Lock held by current process" errors
+    try do
+      if old_ref = :persistent_term.get(:spiredb_rocksdb_ref, nil) do
+        Logger.warning("Found stale RocksDB reference in persistent_term. Closing it.")
+
+        try do
+          :rocksdb.close(old_ref)
+        catch
+          _, _ -> :ok
+        end
+
+        :persistent_term.erase(:spiredb_rocksdb_ref)
+      end
+    catch
+      _, _ -> :ok
+    end
+
     path_charlist = to_charlist(path)
 
     # Load configuration with production defaults

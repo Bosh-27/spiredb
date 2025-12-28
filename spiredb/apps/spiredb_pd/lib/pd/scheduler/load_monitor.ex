@@ -57,7 +57,7 @@ defmodule PD.Scheduler.LoadMonitor do
     end
 
     case :ra.consistent_query(server_id, query_fun) do
-      {:ok, {state, _leader}, _} ->
+      {:ok, state, _leader} ->
         {:ok, state}
 
       {:error, reason} ->
