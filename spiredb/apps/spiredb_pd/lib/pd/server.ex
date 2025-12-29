@@ -27,10 +27,15 @@ defmodule PD.Server do
   def init(_config) do
     num_regions = Application.get_env(:spiredb_pd, :num_regions, 16)
 
+    regions =
+      for id <- 1..num_regions, into: %{} do
+        {id, %Region{id: id, leader: Node.self(), stores: [Node.self()]}}
+      end
+
     state = %{
       stores: %{},
-      regions: %{},
-      next_region_id: 1,
+      regions: regions,
+      next_region_id: num_regions + 1,
       num_regions: num_regions
     }
 
