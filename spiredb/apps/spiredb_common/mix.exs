@@ -11,7 +11,9 @@ defmodule SpiredbCommon.MixProject do
       lockfile: "../../mix.lock",
       elixir: "~> 1.14",
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      deps: deps(),
+      # Ignore xref warnings for optional Ra dependency
+      xref: [exclude: [:ra, :ra_system, :ra_directory]]
     ]
   end
 
@@ -31,7 +33,8 @@ defmodule SpiredbCommon.MixProject do
       {:jason, "~> 1.4"},
       {:telemetry, "~> 1.2"},
       {:logger_json, "~> 5.1"},
-      {:grpc_reflection, "~> 0.3.0"}
+      {:grpc_reflection, "~> 0.3.0"},
+      {:ra, "~> 2.6", optional: true}
     ]
   end
 end

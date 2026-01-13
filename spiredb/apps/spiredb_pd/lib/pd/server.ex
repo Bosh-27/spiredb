@@ -36,7 +36,8 @@ defmodule PD.Server do
       stores: %{},
       regions: regions,
       next_region_id: num_regions + 1,
-      num_regions: num_regions
+      num_regions: num_regions,
+      plugins: %{}
     }
 
     # Ra machine init must return state
@@ -103,14 +104,145 @@ defmodule PD.Server do
   end
 
   @impl :ra_machine
+  def apply(_meta, {:register_plugin, plugin_info}, state) do
+    name = Map.get(plugin_info, :name) || Map.get(plugin_info, "name")
+    plugins = Map.get(state, :plugins, %{})
+
+    normalized = %{
+      name: name,
+      version: Map.get(plugin_info, :version) || Map.get(plugin_info, "version"),
+      type: Map.get(plugin_info, :type) || Map.get(plugin_info, "type"),
+      description: Map.get(plugin_info, :description) || Map.get(plugin_info, "description"),
+      has_nif: Map.get(plugin_info, :has_nif) || Map.get(plugin_info, "has_nif", false),
+      registered_at: DateTime.utc_now()
+    }
+
+    new_state = %{state | plugins: Map.put(plugins, name, normalized)}
+    {new_state, {:ok, name}, []}
+  end
+
+  @impl :ra_machine
+  def apply(_meta, {:unregister_plugin, plugin_name}, state) do
+    plugins = Map.get(state, :plugins, %{})
+
+    if Map.has_key?(plugins, plugin_name) do
+      new_state = %{state | plugins: Map.delete(plugins, plugin_name)}
+      {new_state, :ok, []}
+    else
+      {state, {:error, :not_found}, []}
+    end
+  end
+
+  @impl :ra_machine
+  def apply(_meta, {:deregister_store, node_name}, state) do
+    case Map.pop(state.stores, node_name) do
+      {nil, _} ->
+        {state, {:error, :store_not_found}, []}
+
+      {_store, new_stores} ->
+        # Remove store from all region assignments
+        new_regions =
+          state.regions
+          |> Enum.map(fn {id, region} ->
+            updated_stores = Enum.reject(region.stores, &(&1 == node_name))
+
+            new_leader =
+              if region.leader == node_name, do: List.first(updated_stores), else: region.leader
+
+            {id, %{region | stores: updated_stores, leader: new_leader}}
+          end)
+          |> Map.new()
+
+        new_state = %{state | stores: new_stores, regions: new_regions}
+        Logger.info("Store deregistered: #{node_name}")
+        {new_state, :ok, []}
+    end
+  end
+
+  @impl :ra_machine
+  def apply(_meta, {:update_region_stores, region_id, stores}, state) do
+    case Map.get(state.regions, region_id) do
+      nil ->
+        {state, {:error, :region_not_found}, []}
+
+      region ->
+        updated_region = %{region | stores: stores, epoch: region.epoch + 1}
+        new_regions = Map.put(state.regions, region_id, updated_region)
+        new_state = %{state | regions: new_regions}
+        {new_state, :ok, []}
+    end
+  end
+
+  @impl :ra_machine
   def state_enter(_ra_state, _machine_state), do: []
 
   ## Query Functions (read-only, don't modify state)
 
   def find_region_by_key(state, key) do
-    # Simple hash-based routing
-    region_id = :erlang.phash2(key, state.num_regions) + 1
-    Map.get(state.regions, region_id)
+    # First try key range-based routing for regions with defined key ranges
+    range_match =
+      state.regions
+      |> Map.values()
+      |> Enum.find(fn region ->
+        key_in_region?(key, region.start_key, region.end_key)
+      end)
+
+    case range_match do
+      nil ->
+        # Fallback to phash2 for uniform distribution
+        region_id = :erlang.phash2(key, state.num_regions) + 1
+        Map.get(state.regions, region_id)
+
+      region ->
+        region
+    end
+  end
+
+  # Check if key falls within region's key range
+  # start_key is inclusive, end_key is exclusive
+  defp key_in_region?(key, start_key, end_key) do
+    # If no key ranges defined, don't match (use hash fallback)
+    cond do
+      is_nil(start_key) and is_nil(end_key) ->
+        false
+
+      is_nil(start_key) ->
+        # No start means region starts at beginning of keyspace
+        key < end_key
+
+      is_nil(end_key) ->
+        # No end means region extends to end of keyspace
+        key >= start_key
+
+      true ->
+        # Both bounds defined
+        key >= start_key and key < end_key
+    end
+  end
+
+  @doc """
+  Get stores hosting a region, filtered by health status.
+  Returns list of stores sorted by preference (leader first).
+  """
+  def get_region_stores(state, region_id) do
+    case Map.get(state.regions, region_id) do
+      nil ->
+        []
+
+      region ->
+        # Get store health status
+        stores_with_status =
+          Enum.map(region.stores, fn store_node ->
+            store = Map.get(state.stores, store_node)
+            status = if store && store.state == :up, do: :up, else: :down
+            {store_node, status}
+          end)
+
+        # Sort: leader first, then up stores, then down stores
+        Enum.sort_by(stores_with_status, fn {node, status} ->
+          {if(node == region.leader, do: 0, else: 1), if(status == :up, do: 0, else: 1)}
+        end)
+    end
   end
 
   def list_stores(state) do
@@ -307,6 +439,22 @@ defmodule PD.Server do
   end
 
   @doc """
+  Deregister a store node (graceful removal).
+  Removes the store from cluster metadata and all region assignments.
+  """
+  def deregister_store(node_name) do
+    :ra.process_command({:pd_server, seed_node()}, {:deregister_store, node_name}, 30_000)
+  end
+
+  @doc """
+  Update the store list for a region.
+  Used for replica management (add/remove replicas).
+  """
+  def update_region_stores(region_id, stores) do
+    :ra.process_command({:pd_server, seed_node()}, {:update_region_stores, region_id, stores})
+  end
+
+  @doc """
   Find which region a key belongs to.
   """
   def find_region(key) do
@@ -344,6 +492,43 @@ defmodule PD.Server do
 
   defp list_all_regions(state) do
     Map.values(state.regions)
+  end
+
+  @doc """
+  Get all registered stores.
+  """
+  def get_all_stores do
+    case :ra.leader_query({:pd_server, seed_node()}, &list_all_stores/1) do
+      {:ok, {_index, stores}, _leader} -> {:ok, stores}
+      {:error, _} = error -> error
+      {:timeout, _} -> {:error, :timeout}
+    end
+  end
+
+  @doc """
+  Get store by ID (phash2 of node name).
+  """
+  def get_store_by_id(store_id) do
+    case :ra.leader_query({:pd_server, seed_node()}, &find_store_by_id(&1, store_id)) do
+      {:ok, {_index, store}, _leader} -> {:ok, store}
+      {:error, _} = error -> error
+      {:timeout, _} -> {:error, :timeout}
+    end
+  end
+
+  defp list_all_stores(state) do
+    Map.values(state.stores)
+  end
+
+  defp find_store_by_id(state, store_id) do
+    # store_id is phash2 of node name
+    Enum.find(state.stores, fn {node, _store} ->
+      :erlang.phash2(node) == store_id
+    end)
+    |> case do
+      {_node, store} -> store
+      nil -> nil
+    end
   end
 
   defp wait_for_ra_system(retries) do

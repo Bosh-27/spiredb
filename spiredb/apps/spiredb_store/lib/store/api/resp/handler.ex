@@ -18,6 +18,11 @@ defmodule Store.API.RESP.Handler do
   @command_timeout 30_000
   @idle_timeout 300_000
 
+  # Rate limiting
+  # 1 second
+  @rate_limit_window 1_000
+  @rate_limit_ops Application.compile_env(:spiredb_store, :resp_rate_limit, 100_000)
+
   def start_link(ref, transport, opts) do
     pid = spawn_link(__MODULE__, :init, [ref, transport, opts])
     {:ok, pid}
@@ -34,7 +39,9 @@ defmodule Store.API.RESP.Handler do
       transport: transport,
       buffer: <<>>,
       pending_count: 0,
-      last_activity: System.monotonic_time(:millisecond)
+      last_activity: System.monotonic_time(:millisecond),
+      ops_this_window: 0,
+      window_start: System.monotonic_time(:millisecond)
     }
 
     loop(state)
@@ -93,9 +100,22 @@ defmodule Store.API.RESP.Handler do
     else
       case Redix.Protocol.parse(buffer) do
         {:ok, command, rest} ->
-          response = execute_command_with_timeout(command)
-          new_state = %{state | pending_count: state.pending_count + 1}
-          process_buffer(rest, [response | responses], new_state)
+          case check_rate_limit(state) do
+            {:rate_limited, state} ->
+              response = {:error, "ERR rate limit exceeded"}
+              process_buffer(rest, [response | responses], state)
+
+            {:ok, state} ->
+              response = execute_command_with_timeout(command)
+
+              new_state = %{
+                state
+                | pending_count: state.pending_count + 1,
+                  ops_this_window: state.ops_this_window + 1
+              }
+
+              process_buffer(rest, [response | responses], new_state)
+          end
 
         {:continuation, _cont} ->
           if responses == [] do
@@ -108,13 +128,50 @@ defmodule Store.API.RESP.Handler do
     end
   end
 
+  defp check_rate_limit(state) do
+    now = System.monotonic_time(:millisecond)
+
+    if now - state.window_start >= @rate_limit_window do
+      {:ok, %{state | ops_this_window: 0, window_start: now}}
+    else
+      if state.ops_this_window >= @rate_limit_ops do
+        {:rate_limited, state}
+      else
+        {:ok, state}
+      end
+    end
+  end
+
+  # Simple commands that can be executed inline without Task spawn
+  # These are fast enough that the Task overhead would be significant
+  @inline_commands ~w(PING ECHO COMMAND INFO GET SET DEL EXISTS INCR DECR SETNX TTL PTTL TYPE DBSIZE)
+
   defp execute_command_with_timeout([cmd | args]) when is_binary(cmd) do
     normalized_cmd = String.upcase(cmd)
+    command = [normalized_cmd | args]
 
+    if normalized_cmd in @inline_commands do
+      # Inline execution - no Task spawn for simple commands
+      try do
+        Commands.execute(command)
+      catch
+        kind, reason ->
+          Logger.error("Inline command failed (#{kind}): #{inspect(reason)}")
+          {:error, "ERR internal error"}
+      end
+    else
+      # Async execution with timeout for complex commands
+      execute_with_task(command, normalized_cmd)
+    end
+  end
+
+  defp execute_command_with_timeout(_invalid), do: {:error, "ERR invalid command format"}
+
+  defp execute_with_task(command, cmd_name) do
     task =
       Task.async(fn ->
         try do
-          Commands.execute([normalized_cmd | args])
+          Commands.execute(command)
         catch
           :exit, reason ->
             Logger.error("Command execution exited: #{inspect(reason)}")
@@ -131,12 +188,10 @@ defmodule Store.API.RESP.Handler do
         result
 
       nil ->
-        Logger.warning("Command timed out: #{normalized_cmd}")
+        Logger.warning("Command timed out: #{cmd_name}")
         {:error, "ERR command timeout"}
     end
   end
-
-  defp execute_command_with_timeout(_invalid), do: {:error, "ERR invalid command format"}
 
   defp send_responses(transport, socket, responses) do
     Enum.each(responses, fn response ->

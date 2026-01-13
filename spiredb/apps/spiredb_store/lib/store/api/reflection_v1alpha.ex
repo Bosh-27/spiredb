@@ -1,7 +1,10 @@
 defmodule Store.API.ReflectionV1Alpha do
+  @moduledoc false
   use GrpcReflection.Server,
     version: :v1alpha,
     services: [
-      SpireDb.Spiredb.Data.DataAccess.Service
+      Spiredb.Data.DataAccess.Service,
+      Spiredb.Data.TransactionService.Service,
+      Spiredb.Data.VectorService.Service
     ]
 end
