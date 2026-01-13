@@ -502,7 +502,7 @@ defmodule Store.Server do
   defp start_read_ts_tracker(region_id) do
     # Start ReadTsTracker for this region to track max_read_ts
     # Used by AsyncCommitCoordinator for calculating commit timestamps
-    case Store.Region.ReadTsTracker.start_link(region_id) do
+    case Store.Region.ReadTsTracker.start_link(region_id: region_id) do
       {:ok, _pid} ->
         :ok
 
