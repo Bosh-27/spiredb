@@ -20,7 +20,10 @@ defmodule PD.Supervisor do
           # Start Cluster Manager which handles PD Server Lifecycle (Bootstrap vs Join)
           PD.ClusterManager,
           # Plugin Manager for cluster-wide plugin coordination
-          PD.PluginManager
+          # Plugin Manager for cluster-wide plugin coordination
+          PD.PluginManager,
+          # Schema Registry for table metadata
+          PD.Schema.Registry
         ]
       else
         # Standalone mode - still run PluginManager

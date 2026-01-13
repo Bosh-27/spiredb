@@ -32,7 +32,12 @@ defmodule Store.API.RESP.TableCommands do
   def execute(["SPIRE.TABLE.LIST"]) do
     case Registry.list_tables() do
       {:ok, tables} -> Enum.map(tables, & &1.name)
+      {:error, reason} -> {:error, "ERR #{inspect(reason)}"}
     end
+  end
+
+  def execute(["SPIRE.TABLE.LIST" | _]) do
+    {:error, "ERR wrong number of arguments for 'SPIRE.TABLE.LIST'"}
   end
 
   def execute(["SPIRE.TABLE.DESCRIBE", name]) do
@@ -51,6 +56,18 @@ defmodule Store.API.RESP.TableCommands do
       :ok -> "OK"
       {:error, :not_found} -> {:error, "ERR index '#{name}' not found"}
     end
+  end
+
+  def execute(["SPIRE.TABLE.DESCRIBE"]) do
+    {:error, "ERR wrong number of arguments for 'SPIRE.TABLE.DESCRIBE'"}
+  end
+
+  def execute(["SPIRE.TABLE.DROP"]) do
+    {:error, "ERR wrong number of arguments for 'SPIRE.TABLE.DROP'"}
+  end
+
+  def execute(["SPIRE.INDEX.DROP"]) do
+    {:error, "ERR wrong number of arguments for 'SPIRE.INDEX.DROP'"}
   end
 
   def execute(_) do
