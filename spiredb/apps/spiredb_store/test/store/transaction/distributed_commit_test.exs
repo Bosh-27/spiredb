@@ -19,17 +19,15 @@ defmodule Store.Transaction.DistributedCommitTest do
   setup do
     # Clean up ETS tables before each test
     cleanup_ets_tables()
-    # Ensure we get a valid store ref
-    store_ref = get_store_ref()
+
+    # Setup isolated RocksDB for this test
+    # This automatically updates :persistent_term for the duration of the test
+    {:ok, db, cfs} = Store.Test.RocksDBHelper.setup_rocksdb("dist_commit")
+    store_ref = %{db: db, cfs: cfs}
+
     # Generate unique test ID for key isolation
     test_id = :crypto.strong_rand_bytes(4) |> Base.encode16(case: :lower)
     {:ok, %{store_ref: store_ref, test_id: test_id}}
-  end
-
-  defp get_store_ref do
-    db = :persistent_term.get(:spiredb_rocksdb_ref, nil)
-    cfs = :persistent_term.get(:spiredb_rocksdb_cf_map, %{})
-    %{db: db, cfs: cfs}
   end
 
   defp cleanup_ets_tables do
