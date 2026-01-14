@@ -467,7 +467,15 @@ defmodule PD.Server do
                 # Be careful: if we have multiple local servers (unlikely for PD system),
                 # we only want to delete if it implies a node identity mismatch.
                 # Inspecting the ID to see if it contains a node atom that is not us.
-                inspect(id) |> String.contains?(inspect(Node.self())) == false
+                is_stale = inspect(id) |> String.contains?(inspect(current_node)) == false
+
+                if is_stale do
+                  Logger.warning(
+                    "Detected stale PD server ID: #{inspect(id)} (current node: #{inspect(current_node)})"
+                  )
+                end
+
+                is_stale
 
               _ ->
                 false
