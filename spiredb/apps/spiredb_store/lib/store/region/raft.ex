@@ -55,7 +55,8 @@ defmodule Store.Region.Raft do
       cluster_name: cluster_name,
       machine: machine,
       initial_members: member_ids,
-      log_init_args: %{},
+      # CRITICAL: log_init_args must contain uid for Ra recovery to work
+      log_init_args: %{uid: uid},
       # WAL settings - pre-allocate for better write performance
       wal_max_size_bytes: wal_max_size,
       wal_pre_allocate: false,

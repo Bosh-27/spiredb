@@ -267,15 +267,17 @@ defmodule PD.Server do
     wait_for_ra_system(150)
 
     sanitized_name = node_name |> to_string() |> String.replace(~r/[^a-zA-Z0-9_-]/, "_")
+    uid = "pd_#{sanitized_name}"
 
     config = %{
       id: server_id,
-      uid: "pd_#{sanitized_name}",
+      uid: uid,
       cluster_name: cluster_name,
       machine: machine,
       # Empty - will join via add_member
       initial_members: [],
-      log_init_args: %{},
+      # CRITICAL: log_init_args must contain uid for Ra recovery to work
+      log_init_args: %{uid: uid},
       wal_max_size_bytes: 64 * 1024 * 1024,
       wal_pre_allocate: false,
       wal_write_strategy: :default,
@@ -337,13 +339,16 @@ defmodule PD.Server do
 
     sanitized_name = node_name |> to_string() |> String.replace(~r/[^a-zA-Z0-9_-]/, "_")
 
+    uid = "pd_#{sanitized_name}"
+
     config = %{
       id: server_id,
-      uid: "pd_#{sanitized_name}",
+      uid: uid,
       cluster_name: cluster_name,
       machine: machine,
       initial_members: initial_members,
-      log_init_args: %{},
+      # CRITICAL: log_init_args must contain uid for Ra recovery to work
+      log_init_args: %{uid: uid},
       wal_max_size_bytes: 64 * 1024 * 1024,
       wal_pre_allocate: false,
       wal_write_strategy: :default,
