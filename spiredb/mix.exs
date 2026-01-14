@@ -20,7 +20,10 @@ defmodule Spiredb.MixProject do
           spiredb_store: :permanent
         ],
         include_executables_for: [:unix],
-        steps: [:assemble, :tar]
+        steps: [:assemble, :tar],
+        # Prevent cookie mismatch: use env var or fixed default
+        # All nodes MUST use the same cookie for cluster communication
+        cookie: String.to_atom(System.get_env("RELEASE_COOKIE", "spiredb_cluster_cookie"))
       ]
     ]
   end

@@ -102,6 +102,9 @@ ENV SPIRE_RA_DATA_DIR=/var/lib/spiredb/raft
 ENV SPIRE_LOG_LEVEL=info
 ENV RELEASE_DISTRIBUTION=name
 ENV RELEASE_NODE=spiredb@127.0.0.1
+# Cluster authentication cookie - MUST be same across all nodes
+# Override in production via Kubernetes secret or docker-compose
+ENV RELEASE_COOKIE=spiredb_cluster_cookie
 
 EXPOSE 6379 50051 50052
 
