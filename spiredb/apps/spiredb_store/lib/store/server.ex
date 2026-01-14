@@ -135,13 +135,24 @@ defmodule Store.Server do
   @impl true
   def handle_info(:check_pd_dependency, state) do
     Logger.info("Checking PD dependency...")
-    # This might block this process for a while, but init has returned so Supervisor is happy.
-    wait_for_pd_ready()
+    parent = self()
 
+    # Run PD check in background - don't block GenServer
+    spawn(fn ->
+      wait_for_pd_ready(30)
+      send(parent, :pd_ready)
+    end)
+
+    # Start processing requests immediately - don't wait for PD
+    # Regions will initialize when PD is ready
+    {:noreply, state}
+  end
+
+  @impl true
+  def handle_info(:pd_ready, state) do
     Logger.info("PD is ready. Initializing regions...")
     Process.send_after(self(), :initialize_regions, 0)
     Process.send_after(self(), :register_with_pd, 0)
-
     {:noreply, state}
   end
 
@@ -612,7 +623,7 @@ defmodule Store.Server do
     end
   end
 
-  defp wait_for_pd_ready do
+  defp wait_for_pd_ready(retries) do
     # Try to find seed node
     seed = PDServer.seed_node()
 
@@ -629,12 +640,18 @@ defmodule Store.Server do
         end
       end
 
-    if is_ready do
-      :ok
-    else
-      Logger.info("PD not ready yet on #{seed}. Waiting...")
-      Process.sleep(2000)
-      wait_for_pd_ready()
+    cond do
+      is_ready ->
+        :ok
+
+      retries <= 0 ->
+        Logger.error("PD.Server not ready after max retries, proceeding anyway")
+        :timeout
+
+      true ->
+        Logger.info("PD not ready yet on #{seed}. Waiting... (#{retries} retries left)")
+        Process.sleep(2000)
+        wait_for_pd_ready(retries - 1)
     end
   end
 

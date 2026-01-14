@@ -363,32 +363,32 @@ defmodule PD.Server do
         :ok ->
           Logger.info("PD Raft server started successfully. Checking members...")
 
-          # Sleep to allow Raft server to initialize internal state/WAL
-          Process.sleep(1000)
+          # Short wait for WAL init
+          Process.sleep(200)
 
           # Trigger election if we are the seed node (bootstrapping new cluster)
-          # Raft won't always auto-elect in a single-node cluster depending on Ra version/config
           if config.initial_members != [] do
             Logger.info("Triggering initial election for seed node...")
             :ra.trigger_election(server_id)
-            # Give it a moment to elect
-            Process.sleep(500)
+
+            # Wait for this node to become leader before proceeding
+            wait_for_leadership(server_id, 10)
           end
 
           # Verify it is actually reachable
-          # Use a generous timeout (5s) for the initial check to avoid race conditions on slow disks
           case :ra.members(server_id, 5000) do
-            {:ok, members, _leader} ->
-              Logger.info("Verified PD Raft server is reachable. Members: #{inspect(members)}")
-              # Return :ok from this branch
+            {:ok, members, leader} ->
+              Logger.info(
+                "PD Raft server ready. Members: #{inspect(members)}, Leader: #{inspect(leader)}"
+              )
+
               :ok
 
             other ->
               Logger.warning(
-                "PD Raft server started but check_members returned: #{inspect(other)}. The process might have crashed or be deadlocked."
+                "PD Raft check_members returned: #{inspect(other)}. Proceeding anyway."
               )
 
-              # Still consider it started if members check fails
               :ok
           end
 
@@ -544,6 +544,40 @@ defmodule PD.Server do
         Process.sleep(100)
         wait_for_ra_system(retries - 1)
       end
+    end
+  end
+
+  defp wait_for_leadership(_server_id, retries) when retries <= 0 do
+    Logger.warning("Seed node did not become leader after max retries")
+    :timeout
+  end
+
+  defp wait_for_leadership(server_id, retries) do
+    case :ra.members(server_id, 2000) do
+      {:ok, _members, ^server_id} ->
+        Logger.info("Seed node became leader")
+        :ok
+
+      {:ok, _members, leader} when is_tuple(leader) ->
+        # Another node is leader - that's fine in multi-node bootstrap
+        Logger.info("Leader is #{inspect(leader)}")
+        :ok
+
+      {:ok, _members, :undefined} ->
+        # No leader yet, retry
+        Process.sleep(500)
+        :ra.trigger_election(server_id)
+        wait_for_leadership(server_id, retries - 1)
+
+      {:timeout, _} ->
+        Process.sleep(500)
+        :ra.trigger_election(server_id)
+        wait_for_leadership(server_id, retries - 1)
+
+      other ->
+        Logger.debug("wait_for_leadership got: #{inspect(other)}")
+        Process.sleep(500)
+        wait_for_leadership(server_id, retries - 1)
     end
   end
 
