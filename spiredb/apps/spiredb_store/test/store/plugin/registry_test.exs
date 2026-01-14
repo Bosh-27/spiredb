@@ -112,7 +112,11 @@ defmodule Store.Plugin.RegistryTest do
     {:ok, pid} = Registry.start_link(name: nil)
 
     on_exit(fn ->
-      if Process.alive?(pid), do: GenServer.stop(pid)
+      try do
+        if Process.alive?(pid), do: GenServer.stop(pid)
+      catch
+        :exit, _ -> :ok
+      end
     end)
 
     {:ok, registry: pid}
