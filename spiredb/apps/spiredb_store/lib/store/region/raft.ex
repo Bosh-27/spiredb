@@ -30,8 +30,10 @@ defmodule Store.Region.Raft do
 
     Logger.info("Starting Raft server for region #{region_id} at #{inspect(server_id)}")
 
-    # Generate a UID (simple random/time based for now, standard chars)
-    uid = :erlang.phash2({server_id, System.system_time()}) |> Integer.to_string()
+    # Generate a deterministic UID based on server_id
+    # This ensures that if we restart with the same node identity/IP,
+    # Ra recovers existing state instead of triggering an expensive "replace" operation.
+    uid = :erlang.phash2(server_id) |> Integer.to_string()
 
     # Extract server IDs from nodes list for initial_members
     # nodes is [{region_id, node}, ...]
