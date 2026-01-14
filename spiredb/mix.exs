@@ -21,9 +21,9 @@ defmodule Spiredb.MixProject do
         ],
         include_executables_for: [:unix],
         steps: [:assemble, :tar],
-        # Prevent cookie mismatch: use env var or fixed default
+        # Default cookie - can be overridden at runtime via RELEASE_COOKIE env var
         # All nodes MUST use the same cookie for cluster communication
-        cookie: String.to_atom(System.get_env("RELEASE_COOKIE", "spiredb_cluster_cookie"))
+        cookie: :spiredb_cluster_cookie
       ]
     ]
   end
