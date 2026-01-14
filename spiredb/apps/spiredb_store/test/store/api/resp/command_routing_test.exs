@@ -63,7 +63,6 @@ defmodule Store.API.RESP.CommandRoutingTest do
       e -> {:crashed, e}
     catch
       :exit, reason -> {:crashed, {:exit, reason}}
-      :error, reason -> {:crashed, {:error, reason}}
     end
   end
 
